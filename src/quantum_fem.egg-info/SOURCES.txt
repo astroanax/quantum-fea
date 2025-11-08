@@ -1,0 +1,13 @@
+README.md
+pyproject.toml
+src/quantum_fem/__init__.py
+src/quantum_fem/example_cantilever.py
+src/quantum_fem/fem.py
+src/quantum_fem/hhl.py
+src/quantum_fem/preconditioner.py
+src/quantum_fem.egg-info/PKG-INFO
+src/quantum_fem.egg-info/SOURCES.txt
+src/quantum_fem.egg-info/dependency_links.txt
+src/quantum_fem.egg-info/requires.txt
+src/quantum_fem.egg-info/top_level.txt
+tests/test_cantilever.py
