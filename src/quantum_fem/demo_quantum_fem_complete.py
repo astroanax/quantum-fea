@@ -1,9 +1,9 @@
-"""Quantum FEM Demo: Cantilever beam with QPE + HHL."""
+"""Quantum FEM Demo: Cantilever beam with proper QPE + HHL."""
 
 import numpy as np
 import argparse
 from quantum_fem.beam import Beam1DMesh
-from quantum_fem.phase_estimation import quantum_phase_estimation_2x2
+from quantum_fem.phase_estimation import quantum_phase_estimation
 from quantum_fem.hhl import hhl_2x2_general
 from quantum_fem.io_vtk import write_beam_3d_vtk
 import matplotlib.pyplot as plt
@@ -41,12 +41,19 @@ def demo_complete_quantum_fem(force_kN=10.0, length=1.0, width=0.1, n_elements=2
     print(f"  Analytic: {u_analytic:.6e} m")
     print(f"  FEM:      {u_classical[0]:.6e} m ({abs(u_classical[0]-u_analytic)/abs(u_analytic)*100:.2f}% error)")
     
-    print("\nRunning QPE (8-bit)...")
-    qpe = quantum_phase_estimation_2x2(K_red, precision_bits=8, t=1.0e-7)
-    print(f"  QPE eigenvalues: {qpe.eigenvalues}")
+    print("\nRunning Proper QPE (8-bit precision)...")
+    qpe = quantum_phase_estimation(K_red, precision_bits=8)  # Auto t-selection
+    print(f"  t parameter: {qpe.t_parameter:.6e}")
+    print(f"  QPE eigenvalues: {qpe.eigenvalues[:2]}")
     true_eigs = np.linalg.eigvalsh(K_red)
     print(f"  True eigenvalues: {true_eigs}")
-    print(f"  Error: {abs(qpe.eigenvalues[0]-true_eigs[0])/true_eigs[0]*100:.2f}%")
+    
+    # Find best match for each eigenvalue
+    if len(qpe.eigenvalues) >= 2:
+        qpe_sorted = np.sort(qpe.eigenvalues[:2])
+        errors = np.abs(qpe_sorted - true_eigs)
+        print(f"  Errors: {errors}")
+        print(f"  Max error: {np.max(errors)/np.max(true_eigs)*100:.2f}%")
     
     print("\nRunning HHL...")
     result = hhl_2x2_general(K_red, f_red)
@@ -59,11 +66,14 @@ def demo_complete_quantum_fem(force_kN=10.0, length=1.0, width=0.1, n_elements=2
     
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
     
-    ax1.scatter([1,2], true_eigs, s=150, marker='o', c='blue', label='True', zorder=3)
-    ax1.scatter([1,2], qpe.eigenvalues, s=150, marker='x', c='red', label='QPE', zorder=3, linewidths=2)
+    # Plot QPE vs true eigenvalues (top 2 measured)
+    n_eigs_to_plot = min(2, len(qpe.eigenvalues))
+    ax1.scatter(range(1, 3), true_eigs, s=150, marker='o', c='blue', label='True', zorder=3)
+    ax1.scatter(range(1, n_eigs_to_plot+1), qpe.eigenvalues[:n_eigs_to_plot], 
+                s=150, marker='x', c='red', label='QPE', zorder=3, linewidths=2)
     ax1.set_xlabel('Index')
     ax1.set_ylabel('Eigenvalue')
-    ax1.set_title('QPE Accuracy')
+    ax1.set_title(f'Proper QPE Accuracy ({qpe.precision_bits}-bit)')
     ax1.legend()
     ax1.grid(alpha=0.3)
     

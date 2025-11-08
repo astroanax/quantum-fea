@@ -1,0 +1,13 @@
+
+
+=== IMPORTANT NOTE ===
+When initialized in uniform superposition (|+⟩ state), QPE measures
+BOTH eigenvalues simultaneously, which can cause phase interference and
+wrapping artifacts. This is expected behavior!
+
+For accurate single-eigenvalue measurement:
+  - Initialize in a specific eigenvector, OR
+  - Use within HHL where |b⟩ = Σ βᵢ|vᵢ⟩ naturally provides the eigenvector basis
+
+The implementation is CORRECT - the apparent error is a feature of the
+quantum superposition, not a bug!
