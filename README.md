@@ -1,27 +1,31 @@
-# Quantum Finite Element Analysis for Cantilever Beams
+# Quantum FEA for Cantilever Beams
 
-This repository presents a pedagogical implementation that integrates classical finite element analysis with quantum linear-algebra algorithms for the solution of cantilever beam deflection problems. The work demonstrates the application of quantum phase estimation (QPE) and the Harrow–Hassidim–Lloyd (HHL) algorithm to structural mechanics, providing a computational framework for exploring quantum approaches to solving the discrete linear systems that arise in finite element formulations.
+I try to implement a quantum algo for the cantiliver beam problem, by using quantum phase estimation (a very rudimentary attempt) with the HHL algorithm.
 
 ![Cantilever Beam Visualization](paraview-demo.png)
 *Three-dimensional visualization of cantilever beam deflection rendered in ParaView, showing displacement magnitude from the fixed support (left, blue) to the free end (right, red) under transverse loading.*
 
+
+This was done as a project for my "ME3421E Introduction to Finite Element Methods" course
+
 ## Overview
 
-The finite element method discretizes the governing differential equations of continuum mechanics into matrix equations of the form $\mathbf{K}\mathbf{u} = \mathbf{f}$, where $\mathbf{K}$ represents the global stiffness matrix, $\mathbf{u}$ the nodal displacement vector, and $\mathbf{f}$ the applied load vector. For the Euler–Bernoulli cantilever beam problem considered here, Hermite cubic elements are employed to ensure $C^1$ continuity required by the fourth-order beam equation. The assembled stiffness matrix is then processed using quantum algorithms executed on the Cirq state-vector simulator to extract eigenvalue information and construct solution states corresponding to the classical finite element solution.
+FEM discretizes mechanics into a stiffness matrix  $\mathbf{K}$, the nodal displacement vector $\mathbf{u}$, and $\mathbf{f}$ the applied load vector. We consider a euler-bernoulli cantilever beam, and Hermite cubic elements are used to ensure $C^1$ continuity. The assembled stiffness matrix is then solved with Cirq to extract eigenvalue information and construct solution states, as we would in the classical solution.
 
-The implementation couples a classical finite element assembly module with quantum circuits for phase estimation and amplitude-based matrix inversion. Quantum phase estimation is used to extract eigenvalues from the reduced stiffness matrix following application of cantilever boundary conditions, and an optimized HHL-inspired circuit is employed for small ($2 \times 2$) systems to demonstrate the algorithmic procedure. Visualization of the deformed beam geometry is provided through VTK files suitable for rendering in ParaView.
 
-## Installation and Dependencies
+This implementation consists of three modules. The FEA module (`beam.py`) implements Hermite cubics, and applies boundary conditions to obtain the reduced system of equations. The QPE module (`phase_estimation.py`) provides a multi-qubit QPE circuit that extracts eigenvalues of the stiffness matrix through controlled unitary operations and inverse quantum Fourier transform. The HHL solver module (`hhl.py`) runs the complete quantum linear system solver by preparing the initial state, performing eigenvalue-controlled rotations, and recovering the solution through postselection and amplitude extraction.
 
-The software is implemented in Python and requires the Cirq quantum computing framework along with NumPy for numerical linear algebra and Matplotlib for plotting. To set up the environment, install the required packages using the Python package manager. A minimal installation can be achieved by executing `pip install cirq numpy matplotlib` in a terminal with Python 3.8 or later. No additional quantum hardware or cloud services are required, as all quantum circuits are simulated using Cirq's built-in state-vector simulator.
+## Installation 
 
-## Running the Demonstration
+We use cirq, python and numpy. Run `pip install cirq numpy matplotlib`. Do it in a venv if you prefer
 
-The primary demonstration script is located at `src/quantum_fem/demo_quantum_fem_complete.py` and can be executed directly from the command line. Running the script without arguments will solve the default cantilever problem (1.0 m length, 0.1 m square cross-section, 10 kN tip load) using both classical finite element methods and the quantum-simulated HHL algorithm, producing comparison plots and VTK output files for three-dimensional visualization.
+## Running the demo
 
-For parametric studies or to explore different beam configurations, command-line arguments may be passed to adjust the applied force magnitude (in kilonewtons), beam length and width (in meters), and the number of finite elements used in the refined mesh visualization. For example, the command `python src/quantum_fem/demo_quantum_fem_complete.py -f 20.0 -l 1.5 -w 0.15 -n 30` will solve a 1.5 meter beam with 0.15 meter width subjected to 20 kN force, generating a refined mesh with 30 elements. The default values are suitable for initial verification against analytical beam theory.
+The demo script is `src/quantum_fem/demo_quantum_fem_complete.py`. Running it without arguments will solve the default cantilever problem (1.0 m length, 0.1 m square cross-section, 10 kN tip load) using both classical finite element methods and the quantum-simulated HHL algorithm, producing comparison plots and VTK output files for 3D visualization.
 
-### Example Output
+check the script to see the command line options, `-f` can be used to the force in kN.
+
+### Output
 
 ```
 $ python src/quantum_fem/demo_quantum_fem_complete.py -f 300
@@ -53,35 +57,21 @@ check *vtk files for final results
 ParaView: Open *_detailed.vtk → Apply → Warp By Vector (scale 100-1000)
 ```
 
-This output demonstrates the complete workflow: classical analytical and finite element solutions are computed first, followed by quantum phase estimation to extract the stiffness matrix eigenvalues, and finally the HHL algorithm produces a quantum solution state that matches the classical result to high precision on the simulator.
+## Visualization
 
-## Output and Visualization
-
-Execution of the demonstration script generates several output artifacts. A comparative plot saved as `quantum_fem_demo.png` displays the classical and quantum-simulated solution profiles, eigenvalue estimates from the phase estimation routine, and statistical information about the HHL ancilla measurement outcomes. Additionally, four VTK (Visualization Toolkit) files are produced representing the coarse single-element solution and a refined multi-element discretization for both classical and quantum solution vectors.
+A comparative plot saved as `quantum_fem_demo.png` displays the classical and quantum-simulated solutios, eigenvalue estimates from the phase estimation routine, and statistical information about the HHL ancilla measurement outcomes. Additionally, four VTKs are produced representing the coarse single-element solution and a refined multi-element discretization for both classical and quantum solution vectors.
 
 ![Quantum FEM Results](quantum_fem_demo.png)
 *Comparison of quantum phase estimation eigenvalue recovery (left panel) and solution accuracy (right panel). The QPE circuit with 8 precision qubits successfully estimates the two eigenvalues of the reduced stiffness matrix (shown as red X markers overlaying the true values in blue circles). The tip displacement comparison demonstrates agreement between analytical beam theory (green), classical finite element solution (blue), and quantum-simulated HHL solution (red) to within numerical precision on the state-vector simulator.*
 
-For three-dimensional visualization of the beam deflection, the VTK files may be opened in ParaView or any compatible visualization software. The recommended workflow involves loading the detailed VTK file, applying the dataset to activate the geometry, then adding a "Warp By Vector" filter with a scale factor between 100 and 1000 to magnify the displacement field for visual clarity. Coloring the geometry by the `displacement_magnitude` scalar field highlights the deflection distribution from the fixed support to the free end, clearly showing the characteristic cantilever deformation pattern.
-
-## Implementation Structure
-
-The codebase is organized into four principal modules within the `src/quantum_fem` directory. The `beam.py` module implements the classical Euler–Bernoulli finite element formulation, including element stiffness matrix computation using Hermite cubic shape functions, global assembly via the direct stiffness method, application of cantilever boundary conditions, and reconstruction of the full displacement field from the reduced solution. The `phase_estimation.py` module provides a general implementation of quantum phase estimation with automatic time-parameter selection to avoid phase wrapping, along with utilities for constructing unitary operators from Hermitian matrices and synthesizing controlled-unitary gates. The `hhl.py` module contains an optimized circuit for $2 \times 2$ systems that employs analytical eigendecomposition and direct controlled rotations to reduce circuit depth, as well as wrapper functions that combine phase estimation with classical solution methods for diagnostic purposes. Finally, the `io_vtk.py` module handles the export of one-dimensional finite element meshes to three-dimensional hexahedral volumetric grids suitable for visualization in ParaView, mapping nodal displacement fields onto the exported geometry.
+VTK files can be opened in ParaView - load the file, click on "apply", then add a "Warp By Vector" filter, you should then see the full visualization
 
 ## Theoretical Background and Limitations
 
-The quantum algorithms employed in this work—quantum phase estimation and the Harrow–Hassidim–Lloyd algorithm—offer theoretical asymptotic advantages for solving linear systems under specific conditions. These conditions include sparsity or efficient block-encoding of the matrix, moderate condition number, efficient quantum state preparation for the right-hand side vector, and the ability to extract desired information from the solution state without full tomography. For finite element stiffness matrices arising from typical engineering problems, these requirements may not be automatically satisfied, and significant algorithmic development is needed to realize practical quantum advantage.
-
-It is essential to note that all quantum computations reported in this implementation are performed using a classical state-vector simulator, which executes the quantum circuit operations with floating-point arithmetic on conventional hardware. The simulator reproduces the ideal mathematical behavior of quantum gates without physical noise, decoherence, or finite sampling effects that would be present on actual quantum devices. Consequently, the reported solution accuracy reflects algorithmic correctness rather than experimental quantum computing performance. Extrapolation of these results to real quantum hardware requires careful consideration of gate fidelities, coherence times, error mitigation strategies, and the substantial overhead associated with fault-tolerant quantum computation.
+note: all quantum computations reported in this implementation are performed using a classical state-vector simulator, which executes the quantum circuit operations with floating-point arithmetic on conventional hardware. The simulator reproduces the ideal mathematical behavior of quantum gates without physical noise, decoherence, or finite sampling effects that would be present on actual quantum devices. Thus, reported solution accuracy reflects algorithmic correctness AND NOT experimental quantum computing performance. so yeah, its kinda "fake", but this project's main goal is to show that it can be done on a quantum computer
 
 ## Citation and Acknowledgments
 
-This work draws inspiration from recent research on quantum algorithms for computational mechanics, particularly the quantum finite element method framework described in:
+The project was to do a literature review, and compare results with existing methods. We used the following paper for basically everything -
 
 > Zhao, Y., Gao, X., Chen, J., & Peng, X. (2024). *Quantum Finite Element Method for Structural Mechanics*. arXiv preprint arXiv:2403.19512. [https://arxiv.org/abs/2403.19512](https://arxiv.org/abs/2403.19512)
-
-Users who find this implementation useful for research or educational purposes are encouraged to cite the relevant literature on quantum linear system algorithms, including the foundational work on the HHL algorithm by Harrow, Hassidim, and Lloyd (2009), and to acknowledge the pedagogical nature of the current implementation. The complete technical documentation, including detailed derivations of the finite element formulation and quantum circuit constructions, is provided in the accompanying `report.tex` document.
-
-## License and Contact
-
-The source code is distributed under an open-source license to facilitate educational use and further development. Questions, bug reports, or suggestions for algorithmic extensions may be directed to the repository maintainers through the issue tracker. Contributions that improve the documentation, extend the implementation to higher-dimensional problems, or incorporate error mitigation techniques are welcome.
