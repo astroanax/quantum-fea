@@ -1,20 +1,12 @@
-# Quantum FEM: Steel Cantilever Beam Solver
+# Quantum FEM: Cantilever Beam Solver
 
-Quantum finite element solver for 3D steel cantilever beam using HHL algorithm.
+Quantum finite element method for cantilever beam analysis using QPE + HHL algorithm.
 
-## Problem Setup
+## Requirements
 
-- **Material**: Steel (E = 200 GPa)
-- **Geometry**: 1m × 0.1m × 0.1m (square cross-section)
-- **Loading**: 10 kN downward force at free end
-- **Deflection**: ~2 mm at tip
-
-## Features
-
-- **Classical FEM**: Hermite cubic beam elements (Euler-Bernoulli theory)
-- **Quantum Phase Estimation**: Extract eigenvalues without classical diagonalization
-- **HHL Solver**: Quantum linear solver with C=0.9*λ_min (unsaturated rotations)
-- **3D Visualization**: VTK export for ParaView
+```bash
+pip install cirq numpy matplotlib
+```
 
 ## Usage
 
@@ -22,32 +14,32 @@ Quantum finite element solver for 3D steel cantilever beam using HHL algorithm.
 python src/quantum_fem/demo_quantum_fem_complete.py
 ```
 
-Generates 4 VTK files for ParaView visualization:
-- `classical_solution.vtk` - Basic classical solution
-- `quantum_solution.vtk` - Basic quantum solution  
-- `classical_solution_detailed.vtk` - 20 elements (smooth visualization)
-- `quantum_solution_detailed.vtk` - 20 elements (smooth visualization)
+### CLI Options
+
+```bash
+python src/quantum_fem/demo_quantum_fem_complete.py -f 20.0 -l 1.5 -w 0.15 -n 30
+```
+
+- `-f, --force`: Force in kN (default: 10.0)
+- `-l, --length`: Beam length in meters (default: 1.0)
+- `-w, --width`: Beam width in meters (default: 0.1)
+- `-n, --elements`: Number of elements for detailed mesh (default: 20)
+
+## Output
+
+- `quantum_fem_demo.png`: Comparison plot
+- `*.vtk`: ParaView visualization files
 
 ## ParaView Visualization
 
-1. Open: `paraview classical_solution_detailed.vtk`
+1. Open `*_detailed.vtk` in ParaView
 2. Click "Apply"
-3. Add filter: "Warp By Vector" (scale: 100-1000)
-4. Color by: "displacement_magnitude"
-5. See the beam bending downward!
+3. Add "Warp By Vector" filter (scale: 100-1000)
+4. Color by `displacement_magnitude`
 
-## Files
+## Components
 
-- `beam.py` - Euler-Bernoulli beam FEM
-- `hhl.py` - HHL quantum solver  
-- `phase_estimation.py` - Quantum phase estimation
-- `io_vtk.py` - 3D VTK export for ParaView
-- `demo_quantum_fem_complete.py` - Complete demo
-
-## Implementation
-
-- Uses Cirq for quantum circuits
-- Magnitude recovery: ||x|| = (||b||/C) * √p_success
-- QPE with 8-bit precision (~7% eigenvalue error)
-- Simulator achieves <0.001% solution error
-- 3D volumetric mesh with hexahedral elements
+- **beam.py**: Euler-Bernoulli FEM
+- **phase_estimation.py**: Quantum Phase Estimation
+- **hhl.py**: HHL algorithm (quantum linear solver)
+- **io_vtk.py**: VTK export for visualization

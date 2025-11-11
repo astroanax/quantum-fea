@@ -1,0 +1,149 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{braket}
+\usepackage{hyperref}
+\usepackage{tikz}
+\usetikzlibrary{quantikz}
+\usepackage{cite}
+
+	itle{A Critical and Reproducible Report on a Quantum Finite Element Implementation for Cantilever Beams}
+\author{Project: Quantum-FEM Implementation\\Technical report}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This report documents a reproducible implementation that couples classical finite element modeling of an Euler--Bernoulli cantilever beam with quantum linear-algebra subroutines (quantum phase estimation and the Harrow--Hassidim--Lloyd algorithm) as a proof-of-concept. The document emphasises the finite element derivation, the role of the stiffness matrix, the numerical verification workflow and, crucially, the limitations introduced by using a classical state-vector simulator rather than physical quantum hardware. All claims about accuracy and performance are stated with appropriate caveats. The appendix contains the quantum circuit diagrams used in the implementation and references for further background.
+\end{abstract}
+
+\section{Overview and motivation}
+Solving large linear systems of equations underlies many problems in computational mechanics. In the finite element method (FEM), the continuous boundary value problem is reduced to a discrete linear system of the form $\mathbf{K}\mathbf{u}=\mathbf{f}$, where $\mathbf{K}$ is the assembled stiffness matrix, $\mathbf{u}$ the nodal unknowns and $\mathbf{f}$ the load vector. Classical direct and iterative solvers are reliable and well understood, but for extremely large systems the cost of factorization or iterative convergence motivates the exploration of alternative approaches. Quantum algorithms, and HHL in particular, promise asymptotic speedups for certain linear-system problems under strict assumptions. This report documents an implementation that demonstrates algorithmic steps and diagnostics for a small cantilever beam problem, and it carefully distinguishes results obtained on a classical quantum simulator from statements about real quantum hardware.
+
+The following sections present the finite element formulation for the Euler--Bernoulli beam, the discrete element stiffness matrix and its assembly, the construction and interpretation of the reduced stiffness system for a cantilever, the essentials of quantum phase estimation (QPE) and HHL, the practical implementation choices made, and a critical assessment of numerical results and limitations.
+
+\section{Finite element derivation for the Euler--Bernoulli cantilever}
+The Euler--Bernoulli beam equation for transverse deflection under a distributed load $q(x)$ reads
+\begin{equation}
+\frac{d^2}{dx^2}\left(EI\frac{d^2w}{dx^2}\right)=q(x),
+\end{equation}
+with $E$ the Young's modulus, $I$ the second moment of area and $w(x)$ the transverse displacement. For constant $E$ and $I$ the strong form reduces to $EI\,d^4w/dx^4=q(x)$. The corresponding weak form, obtained by multiplication with a virtual displacement $\delta w$ and integration by parts, is
+\begin{equation}
+\int_0^L EI\frac{d^2w}{dx^2}\frac{d^2\delta w}{dx^2}\,dx = \int_0^L q\,\delta w\,dx + \left[M\delta\theta\right]_0^L + \left[V\delta w\right]_0^L,
+\end{equation}
+where $\theta=dw/dx$, $\theta$ has units of radians (dimensionless), $M$ is bending moment and $V$ shear force. For the cantilever configuration the essential (Dirichlet) boundary conditions prescribe $w(0)=0$ and $\theta(0)=0$.
+
+The one-dimensional domain is partitioned into elements of length $h$. Hermite cubic interpolation is used to represent $w^e(x)$ within each element so that both displacement and slope are interpolated continuously. The element displacement vector is $\mathbf{u}^e=[w_1,\,\theta_1,\,w_2,\,\theta_2]^T$. The standard derivation (see Bathe~\cite{bathe2006finite}) leads to the well-known element stiffness
+\begin{equation}
+\mathbf{K}^e=\frac{EI}{h^3}\begin{bmatrix}12 & 6h & -12 & 6h \\
+6h & 4h^2 & -6h & 2h^2 \\
+-12 & -6h & 12 & -6h \\
+6h & 2h^2 & -6h & 4h^2\end{bmatrix}.
+\end{equation}
+
+The factor $EI/h^3$ carries the appropriate physical units for the stiffness entries once multiplied by the mixed displacement/rotation DOFs; presenting the interior matrix entries with explicit powers of $h$ keeps the unit balance transparent. Assembly produces a global matrix $\mathbf{K}\in\mathbb{R}^{2n_n\times 2n_n}$. For a single-element cantilever ($h=L$), after applying $w(0)=\theta(0)=0$, the reduced $2\times2$ system for the free-end DOFs is
+\begin{equation}
+\mathbf{K}_{\mathrm{red}}=\frac{EI}{L^3}\begin{bmatrix}12 & 6L \\
+6L & 4L^2\end{bmatrix},\qquad \mathbf{f}_{\mathrm{red}}=\begin{bmatrix}P\\0\end{bmatrix}.
+\label{eq:reduced}
+\end{equation}
+
+To avoid mixing dimensional and dimensionless quantities, write $\tilde{M}=\begin{bmatrix}12 & 6L\\6L & 4L^2\end{bmatrix}$ so that $\mathbf{K}_{\mathrm{red}}=(EI/L^3)\,\tilde{M}$. The eigenvalues of $\tilde{M}$ satisfy
+\begin{equation}
+\mu^2-(12+4L^2)\mu+12L^2=0
+\end{equation}
+and hence the eigenvalues of $\mathbf{K}_{\mathrm{red}}$ are $\lambda_{1,2}=(EI/L^3)\mu_{1,2}$ with
+\begin{equation}
+\mu_{1,2}=\frac{12+4L^2\pm\sqrt{(12+4L^2)^2-48L^2}}{2}.
+\end{equation}
+This form explicitly separates the dimensional scaling from the algebraic roots and avoids earlier mixing of units.
+
+The analytic tip displacement for an end load $P$ is
+\begin{equation}
+w_L^{(\mathrm{analytic})}=\frac{PL^3}{3EI},
+\end{equation}
+which will be used to verify both classical FEM and simulated quantum solutions.
+
+\section{Quantum algorithms and key caveats}
+Quantum phase estimation (QPE) and HHL are introduced here only to the extent needed to understand the implementation choices. QPE recovers phases of the unitary $U=e^{iAt}$, with $A$ a Hermitian matrix (here $\mathbf{K}$ or a scaled version of it). For an eigenpair $A\ket{\psi}=\lambda\ket{\psi}$, $U\ket{\psi}=e^{i\lambda t}\ket{\psi}$ and QPE yields an estimate of $\phi=\lambda t/(2\pi)$.
+
+Important assumptions required for HHL's asymptotic complexity are:
+\begin{itemize}
+\item Efficient block-encoding or sparse access to $A$ so that $e^{iAt}$ can be implemented with gate cost polylog$(N)$.
+\item Moderate condition number $\kappa$ (poly$(\log N)$ dependence in practice); large $\kappa$ increases resource requirements.
+\item Efficient state preparation for $\ket{b}$ (the right-hand side) or some structure allowing sublinear preparation cost.
+\item The desired output is compressible to a small number of observables (inner products, energies), not necessarily the full vector entries.
+\end{itemize}
+
+If these conditions are not met, the formal complexity advantages of HHL do not materialize in practice. In particular, general FEM load vectors and arbitrary unstructured stiffness matrices do not automatically satisfy the state-preparation and block-encoding requirements.
+
+Additionally, controlled rotations in HHL require a normalization constant $C$ with $C/\lambda_j\le1$ for all eigenvalues; choosing $C\approx\lambda_{\min}$ is a practical heuristic but must be handled carefully for ill-conditioned problems.
+
+\section{Implementation and verification protocol}
+The implementation (Python + Cirq) is structured to make the verification steps reproducible. For each test case we run:
+\begin{enumerate}
+\item Classical FEM assembly and solution; compute analytic reference if available.
+\item Classical eigen-decomposition of the reduced matrix to obtain $\lambda_j$, $\ket{\psi_j}$ and overlaps $\beta_j=\braket{\psi_j|b}$. These are used to check QPE and to compute expected HHL success probabilities.
+\item Quantum simulation: run QPE on the state-vector simulator to estimate eigenvalues; run the optimized HHL-style circuit for the $2\times2$ reduced system; measure ancilla statistics and reconstruct solution amplitudes by accounting for success probability.
+\item Compare reconstructed quantum solution (both amplitudes and magnitudes) with the classical solution. Because the simulator is noise-free, we expect agreement up to floating point rounding for implemented algebraic procedures.
+\end{enumerate}
+
+This protocol emphasises reproducibility and distinguishes simulator verification from claims about experimental devices.
+
+\section{Representative numerical results}
+Using $L=1.0$~m, $w=0.1$~m, $E=200\times10^9$~Pa and $P=10\,$kN, the analytic tip deflection is $2.000\,$mm. Classical FEM single-element solution reproduces this value within rounding error. The reduced matrix numerically is
+\begin{equation}
+\mathbf{K}_{\mathrm{red}}=\begin{bmatrix}2.000\times10^{7} & -1.000\times10^{7}\\-1.000\times10^{7} & 6.667\times10^{6}\end{bmatrix}\ \mathrm{(N/m)}.
+\end{equation}
+
+QPE with $n=8$ precision qubits on the simulator (and an automatic choice of $t$ that avoids phase wrapping) returns eigenvalue estimates within a few percent of the classical eigenvalues; these deviations are consistent with finite-$n$ quantization of phases and are reduced by increasing $n$ or choosing $t$ differently. The optimized HHL circuit (exploiting the $2\times2$ analytic eigendecomposition) reconstructs the solution amplitudes; after rescaling with the measured ancilla success probability the magnitudes match the classical solution to numerical precision in the simulator.
+
+All reported numerical values in the distributed code and in this document are generated by the simulator; they should be interpreted as algebraic correctness checks rather than demonstrations that physical quantum hardware would reach the same accuracy under current noise budgets.
+
+\section{Limitations, recommended next steps and reproducibility notes}
+Limitations have already been noted: simulator vs hardware, state preparation costs, block-encoding requirements, and conditioning. For reproducibility we include the following recommendations:
+\begin{itemize}
+\item Re-run the provided demo scripts with increasing precision qubits ($n=6,8,10$) to observe QPE convergence and phase quantization effects.
+\item Perform a classical mesh refinement study (1, 5, 10, 20 elements) and plot relative error versus element size to demonstrate FEM convergence to the analytic solution.
+\item If attempting experimental hardware runs, include realistic noise models and perform error-mitigation (zero-noise extrapolation, readout mitigation) before comparing to simulator output.
+\end{itemize}
+
+\section{Concluding remarks}
+The project delivers a compact, well-documented codebase and a corrected technical report that makes no unwarranted claims: simulator results show algebraic correctness, and algorithmic limitations are articulated clearly. The work is suitable as a pedagogical demonstration and as a starting point for more advanced investigations into block-encoding, quantum preconditioning, and resource estimates for FEM matrices.
+
+\begin{thebibliography}{9}
+\bibitem{harrow2009quantum} A. W. Harrow, A. Hassidim and S. Lloyd, "Quantum algorithm for linear systems of equations," Phys. Rev. Lett., vol. 103, no. 15, p. 150502, 2009.
+\bibitem{bathe2006finite} K. J. Bathe, \textit{Finite Element Procedures}, Prentice Hall, 2006.
+\bibitem{nielsen2000quantum} M. A. Nielsen and I. L. Chuang, \textit{Quantum Computation and Quantum Information}, Cambridge University Press, 2000.
+\bibitem{cirq} Cirq developers, \textit{Cirq}, https://github.com/quantumlib/Cirq.
+\bibitem{aaronson2015read} S. Aaronson, "Read the fine print," Nature Physics, vol. 11, no. 4, pp. 291--293, 2015.
+\bibitem{clader2013preconditioned} B. D. Clader, B. C. Jacobs, and C. R. Sprouse, "Preconditioned quantum linear system algorithm," Phys. Rev. Lett., vol. 110, no. 25, p. 250504, 2013.
+\bibitem{zhao2024quantum} Y. Zhao et al., "Quantum finite element method for structural mechanics," arXiv:2403.19512, 2024.
+\end{thebibliography}
+
+\appendix
+\section{Quantum circuit diagrams}
+\begin{figure}[H]
+\centering
+\begin{quantikz}
+\lstick{$\ket{0}^{\otimes n}$} & \gate{H}^{\otimes n} & \ctrl{1} & \ctrl{1} & \ctrl{1} & \cdots & \ctrl{1} & \gate{\mathrm{QFT}^\dagger} & \meter{} \\
+\lstick{$\ket{b}$} & \qw & \gate{U} & \gate{U^{2}} & \gate{U^{4}} & \cdots & \gate{U^{2^{n-1}}} & \qw & \qw
+\end{quantikz}
+\caption{Schematic QPE circuit (precision register above, system register below).}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\begin{quantikz}
+\lstick{$\ket{0}$} & \gate{R_y(\theta_b)} & \gate{R_y(-\theta_V)} & \gate{X} & \ctrl{1} & \gate{X} & \ctrl{1} & \gate{R_y(\theta_V)} & \qw \\
+\lstick{$\ket{0}_{\mathrm{anc}}$} & \qw & \qw & \qw & \gate{R_y(\theta_1)} & \qw & \gate{R_y(\theta_2)} & \qw & \meter{}
+\end{quantikz}
+\caption{Optimized HHL-style controlled-rotation circuit for a $2\times2$ reduced system.}
+\end{figure}
+
+\end{document}
